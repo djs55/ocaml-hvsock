@@ -290,7 +290,7 @@ let read flow =
       )
   end else begin
     let result = flow.leftover in
-    flow.leftover <- Cstruct.create 0;
+    flow.leftover <- Cstruct.sub flow.leftover 0 0;
     Lwt.return (`Ok result)
   end
 
