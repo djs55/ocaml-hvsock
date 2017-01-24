@@ -202,7 +202,7 @@ let connect ?(message_size = 8192) ?(buffer_size = 262144) fd =
         Condition.wait t.read_buffers_c t.read_buffers_m
       done;
       let allowed = t.read_buffers_max - t.read_buffers_len in
-      let buf = Cstruct.create allowed in
+      let buf = Cstruct.create_unsafe allowed in
       Mutex.unlock t.read_buffers_m;
       buf in
     try

@@ -191,8 +191,8 @@ let close flow =
             >>= function
             | `Eof -> Lwt.return ()
             | `Ok () ->
-              let header = Cstruct.create Message.sizeof in
-              let payload = Cstruct.create maxMsgSize in
+              let header = Cstruct.create_unsafe Message.sizeof in
+              let payload = Cstruct.create_unsafe maxMsgSize in
               let rec wait_for_close () =
                 really_read flow.fd header
                 >>= function
@@ -274,7 +274,7 @@ let read_next_chunk flow =
           loop ()
         | Message.Data n ->
           Log.debug (fun f -> f "RX Data %d" n);
-          let payload = Cstruct.create n in
+          let payload = Cstruct.create_unsafe n in
           really_read flow.fd payload
           >>= function
           | `Eof -> Lwt.return `Eof
