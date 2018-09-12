@@ -31,19 +31,20 @@ module Time = struct
   type 'a io = 'a Lwt.t
   let sleep_ns ns = Lwt_unix.sleep (Duration.to_f ns)
 end
-module Hv = Flow_lwt_hvsock.Make(Time)(Lwt_hvsock_detach)
+module Hv = Lwt_hvsock.Make(Time)(Lwt_hvsock_detach)
 
 let rec connect vmid serviceid =
-  let fd = Hv.Hvsock.create () in
+  let fd = Hv.create () in
   Lwt.catch
     (fun () ->
-      Hv.Hvsock.connect fd { Hvsock.vmid; serviceid }
+      Hv.connect fd { Hvsock.vmid; serviceid }
       >>= fun () ->
-      let flow = Hv.connect fd in
-      Lwt.return flow
+      (* let flow = Hv.connect fd in
+      Lwt.return flow *)
+      Lwt.return fd
     ) (fun e ->
       Printf.fprintf stderr "connect raised %s: sleep 1s and retrying\n%!" (Printexc.to_string e);
-      Hv.Hvsock.close fd
+      Hv.close fd
       >>= fun () ->
       Lwt_unix.sleep 1.
       >>= fun () ->
@@ -52,21 +53,23 @@ let rec connect vmid serviceid =
 
 let send_receive_verify flow =
   let reader_sha = Sha256.init () in
+  let read_buf = Cstruct.create buffer_size in
   let rec reader n =
     Printf.fprintf stderr "about to read\n%!";
-    Hv.read flow
-    >>= function
-    | Ok `Eof ->
+    Hv.read flow read_buf
+    >>= fun m ->
+    if m = 0 then begin
       Printf.fprintf stderr "Reader read total %d bytes\n%!" n;
       Lwt.return ()
-    | Ok (`Data buf) ->
+    end else begin
+      let buf = Cstruct.sub read_buf 0 m in
       Printf.fprintf stderr "read(%d)\n%!" (Cstruct.len buf);
       let s = Cstruct.to_string buf in
       Sha256.update_string reader_sha s;
       reader (n + (Cstruct.len buf))
-    | Error _ ->
-      failwith "Flow read error" in
+    end in
   let writer_sha = Sha256.init () in
+  let write_buf = Cstruct.create buffer_size in
   let rec writer n remaining =
     if remaining = 0 then begin
       (* FIXME: this really should be close *)
@@ -76,31 +79,24 @@ let send_receive_verify flow =
       Lwt.return ()
     end else begin
       let this_time = min buffer_size remaining in
-      let buf = Cstruct.create this_time in
+      let buf = Cstruct.sub write_buf 0 this_time in
       for i = 0 to Cstruct.len buf - 1 do
         Cstruct.set_uint8 buf i (Random.int 255)
       done;
       let s = Cstruct.to_string buf in
       Printf.fprintf stderr "about to write\n%!";
-      Hv.write flow buf
-      >>= function
-      | Ok () ->
-        Printf.fprintf stderr "write(%d)\n%!" n;
-        Sha256.update_string writer_sha s;
-        writer n (remaining - this_time)
-      | Error _ ->
-        Printf.fprintf stderr "write failed\n%!";
-        failwith "Flow write error"
+      Lwt_cstruct.complete (Hv.write flow) buf
+      >>= fun () ->
+      Printf.fprintf stderr "write(%d)\n%!" n;
+      Sha256.update_string writer_sha s;
+      writer n (remaining - this_time)
+
     end in
   (* let n = Random.int (1024 * 1024) in *)
   let n = 1024 in
   Printf.fprintf stderr "starting threads\n%!";
-  writer n n
+  Lwt.join [ reader 0; writer n n ]
   >>= fun () ->
-  reader 0
-  >>= fun () ->
-  (* Lwt.join [ reader 0; writer n n ]
-  >>= fun () -> *)
   let reader = Sha256.(to_hex @@ finalize reader_sha) in
   let writer = Sha256.(to_hex @@ finalize writer_sha) in
   Printf.printf "reader = %s\nwriter = %s\n" reader writer;
