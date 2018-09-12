@@ -1,6 +1,6 @@
 (executables
  ((names (hvcat sock_stress))
-  (libraries (uri sha cstruct.lwt cmdliner hvsock hvsock.lwt hvsock.lwt-unix lwt lwt.unix))))
+  (libraries (uri sha cmdliner hvsock hvsock.lwt hvsock.lwt-unix lwt lwt.unix))))
 
 (install
  ((section bin)
